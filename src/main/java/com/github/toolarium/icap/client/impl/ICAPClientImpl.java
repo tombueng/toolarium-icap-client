@@ -6,6 +6,7 @@
 package com.github.toolarium.icap.client.impl;
 
 import com.github.toolarium.icap.client.ICAPClient;
+import com.github.toolarium.icap.client.ICAPConnectionManager;
 import com.github.toolarium.icap.client.dto.ICAPConstants;
 import com.github.toolarium.icap.client.dto.ICAPHeaderInformation;
 import com.github.toolarium.icap.client.dto.ICAPMode;
@@ -30,6 +31,8 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,6 +48,7 @@ public class ICAPClientImpl implements ICAPClient {
     private static final String ICAP_END_SEPARATOR = NEWLINE + NEWLINE;
     private static final String HTTP_END_SEPARATOR = "0" + ICAP_END_SEPARATOR;
 
+    private ICAPConnectionManager connectionManager;
     private ICAPServiceInformation serviceInformation;
     private ICAPRemoteServiceConfiguration remoteServiceConfiguration;
     private int bufferSize = 8192;
@@ -56,48 +60,50 @@ public class ICAPClientImpl implements ICAPClient {
      *
      * @param serviceInformation the service information
      * @param remoteServiceConfiguration the remote service configuration
+     * @param connectionManager the connection manager
      */
-    public ICAPClientImpl(ICAPServiceInformation serviceInformation, ICAPRemoteServiceConfiguration remoteServiceConfiguration) {
+    public ICAPClientImpl(ICAPConnectionManager connectionManager, ICAPServiceInformation serviceInformation, ICAPRemoteServiceConfiguration remoteServiceConfiguration) {
+        this.connectionManager = connectionManager;
         this.serviceInformation = serviceInformation;
         this.remoteServiceConfiguration = remoteServiceConfiguration;
     }
 
-    
-    /**
-     * @see com.github.toolarium.icap.client.ICAPClient#options()
-     */
-    @Override    
-    public ICAPRemoteServiceConfiguration options() throws IOException {
-        return options(new ICAPRequestInformation());
-    }
-    
 
     /**
      * @see com.github.toolarium.icap.client.ICAPClient#options()
      */
-    @Override    
+    @Override
+    public ICAPRemoteServiceConfiguration options() throws IOException {
+        return options(new ICAPRequestInformation());
+    }
+
+
+    /**
+     * @see com.github.toolarium.icap.client.ICAPClient#options()
+     */
+    @Override
     public ICAPRemoteServiceConfiguration options(final ICAPRequestInformation requestInformation) throws IOException {
         if (remoteServiceConfiguration != null) {
             return remoteServiceConfiguration;
         }
-        
+
         validateRequestInformation(requestInformation);
         final String requestIdentifier = createRequestIdentifier("options", null);
-        try (ICAPSocket icapSocket = new ICAPSocket(requestIdentifier, serviceInformation.getHostName(), serviceInformation.getServicePort(), serviceInformation.getServiceName())) {
-            icapSocket.write("OPTIONS icap://" + serviceInformation.getHostName() + "/" + serviceInformation.getServiceName() + " ICAP/" + requestInformation.getApiVersion() + NEWLINE 
-                           + "Host: " + serviceInformation.getHostName() + NEWLINE 
-                           + "User-Agent: " + requestInformation.getUserAgent() + NEWLINE 
+        try (ICAPSocket icapSocket = new ICAPSocket(connectionManager, requestIdentifier, serviceInformation.getHostName(), serviceInformation.getServicePort(), serviceInformation.getServiceName(), serviceInformation.isSecureConnection())) {
+            icapSocket.write("OPTIONS icap://" + serviceInformation.getHostName() + "/" + serviceInformation.getServiceName() + " ICAP/" + requestInformation.getApiVersion() + NEWLINE
+                           + "Host: " + serviceInformation.getHostName() + NEWLINE
+                           + "User-Agent: " + requestInformation.getUserAgent() + NEWLINE
                            + ICAPConstants.HEADER_KEY_ENCAPSULATED + ": null-body=0" + NEWLINE + NEWLINE);
             icapSocket.flush();
 
-            ICAPHeaderInformation icapHeaderInformation = icapSocket.readICAPResponse(requestIdentifier, ICAP_END_SEPARATOR, bufferSize); 
+            ICAPHeaderInformation icapHeaderInformation = icapSocket.readICAPResponse(requestIdentifier, ICAP_END_SEPARATOR, bufferSize);
             if (icapHeaderInformation.getStatus() != 200) {
                 throw new IOException("Could not resolve options!");
             }
-            
+
             int serverPreviewSize = 1024;
-            if (icapHeaderInformation.containsHeader(ICAPConstants.HEADER_KEY_PREVIEW) 
-                    && icapHeaderInformation.getHeaderValues(ICAPConstants.HEADER_KEY_PREVIEW) != null 
+            if (icapHeaderInformation.containsHeader(ICAPConstants.HEADER_KEY_PREVIEW)
+                    && icapHeaderInformation.getHeaderValues(ICAPConstants.HEADER_KEY_PREVIEW) != null
                     && icapHeaderInformation.getHeaderValues(ICAPConstants.HEADER_KEY_PREVIEW).size() > 0) {
                 try {
                     serverPreviewSize = Integer.parseInt(icapHeaderInformation.getHeaderValues(ICAPConstants.HEADER_KEY_PREVIEW).get(0));
@@ -108,17 +114,17 @@ public class ICAPClientImpl implements ICAPClient {
             }
 
             boolean serverAllow204 = false;
-            if (icapHeaderInformation.containsHeader(ICAPConstants.HEADER_KEY_ALLOW) 
-                    && icapHeaderInformation.getHeaderValues(ICAPConstants.HEADER_KEY_ALLOW) != null 
+            if (icapHeaderInformation.containsHeader(ICAPConstants.HEADER_KEY_ALLOW)
+                    && icapHeaderInformation.getHeaderValues(ICAPConstants.HEADER_KEY_ALLOW) != null
                     && icapHeaderInformation.getHeaderValues(ICAPConstants.HEADER_KEY_ALLOW).size() > 0) {
                 serverAllow204 = Boolean.valueOf(icapHeaderInformation.getHeaderValues(ICAPConstants.HEADER_KEY_ALLOW).get(0).equalsIgnoreCase("204"));
             }
-            
-            LOG.info(requestIdentifier + "Valid service [" 
+
+            LOG.info(requestIdentifier + "Valid service ["
                      + icapHeaderInformation.getStatus() + "/" + icapHeaderInformation.getMessage() + "], "
                      + "allow 204: " + serverAllow204 + ", "
                      + "available methods: " + icapHeaderInformation.getHeaderValues("Methods"));
-            
+
             int i = 0;
             ICAPMode[] result = new ICAPMode[icapHeaderInformation.getHeaderValues("Methods").size()];
             for (String method : icapHeaderInformation.getHeaderValues("Methods")) {
@@ -162,7 +168,7 @@ public class ICAPClientImpl implements ICAPClient {
             resourceName = resource.getResourceName().trim();
             resourceLength = resource.getResourceLength();
         }
-        
+
         final String sourceRequest = requestInformation.prepareSourceRequest(resourceName, resourceLength);
         final String requestIdentifier = createRequestIdentifier(mode.name(), sourceRequest);
         LOG.info(requestIdentifier + "Validate resource (" + sourceRequest + ")");
@@ -179,10 +185,10 @@ public class ICAPClientImpl implements ICAPClient {
         }
 
         File resourceResponse = File.createTempFile(requestIdentifier, ".tmp");
-        try (ICAPSocket icapSocket = new ICAPSocket(requestIdentifier, serviceInformation.getHostName(), serviceInformation.getServicePort(), serviceInformation.getServiceName())) {
+        try (ICAPSocket icapSocket = new ICAPSocket(connectionManager, requestIdentifier, serviceInformation.getHostName(), serviceInformation.getServicePort(), serviceInformation.getServiceName(), serviceInformation.isSecureConnection())) {
             ICAPHeaderInformation icapHeaderInformation = processResource(requestIdentifier, icapSocket, requestInformation, resource, resourceResponse);
             icapHeaderInformation.getHeaders().remove(ICAPConstants.HEADER_KEY_X_ICAP_STATUSLINE);
-            
+
             if (icapHeaderInformation.getStatus() == 200) {
                 String threadInformation = "";
 
@@ -191,13 +197,13 @@ public class ICAPClientImpl implements ICAPClient {
                         threadInformation += "- " + e.getKey() + ": " + e.getValue() + "\n";
                     }
                 }
-                
+
                 if (icapHeaderInformation.containsHeader(ICAPConstants.HEADER_KEY_X_INFECTION_FOUND) || icapHeaderInformation.containsHeader(ICAPConstants.HEADER_KEY_X_VIOLATIONS_FOUND)) {
                     String errorContent = "";
-                    if (resourceResponse != null 
-                            && icapHeaderInformation.getHeaders().containsKey(ICAPConstants.HEADER_KEY_ENCAPSULATED) 
+                    if (resourceResponse != null
+                            && icapHeaderInformation.getHeaders().containsKey(ICAPConstants.HEADER_KEY_ENCAPSULATED)
                             && !icapHeaderInformation.getHeaders().get(ICAPConstants.HEADER_KEY_ENCAPSULATED).isEmpty()
-                            && resourceResponse.length() > 0 && resourceResponse.exists()) {                    
+                            && resourceResponse.length() > 0 && resourceResponse.exists()) {
                         for (int i = 0; i < icapHeaderInformation.getHeaders().get(ICAPConstants.HEADER_KEY_ENCAPSULATED).size(); i++) {
                             String entry = icapHeaderInformation.getHeaders().get(ICAPConstants.HEADER_KEY_ENCAPSULATED).get(i);
                             String[] split = entry.split("=");
@@ -210,13 +216,13 @@ public class ICAPClientImpl implements ICAPClient {
 
                     String msg = "Thread found in resource (" + sourceRequest + ", http-status: " + icapHeaderInformation.getStatus() + "):\n" + threadInformation.trim();
                     LOG.info(requestIdentifier + msg);
-                    throw new ContentBlockedException(msg, icapHeaderInformation, errorContent);                    
+                    throw new ContentBlockedException(msg, icapHeaderInformation, errorContent);
                 } else if (icapHeaderInformation.getHeaders().containsKey(ICAPConstants.HEADER_KEY_X_IDENTICAL_CONTENT)
                         && !icapHeaderInformation.getHeaders().get(ICAPConstants.HEADER_KEY_X_IDENTICAL_CONTENT).isEmpty()
                         && !Boolean.valueOf(icapHeaderInformation.getHeaders().get(ICAPConstants.HEADER_KEY_X_IDENTICAL_CONTENT).get(0))) {
                     String msg = "Not identical resource (" + sourceRequest + ", http-status: " + icapHeaderInformation.getStatus() + "):\n" + threadInformation.trim();
                     LOG.info(requestIdentifier + msg);
-                    throw new ContentBlockedException(msg, icapHeaderInformation);                    
+                    throw new ContentBlockedException(msg, icapHeaderInformation);
                 }
             }
 
@@ -232,17 +238,17 @@ public class ICAPClientImpl implements ICAPClient {
         }
     }
 
-    
+
     /**
      * Validate resource
-     * 
+     *
      * @param resource the resource
      * @throws IOException In case of an invalid resource
      */
     protected void validateResource(final ICAPResource resource) throws IOException {
-        if (resource == null 
-                || resource.getResourceName() == null || resource.getResourceName().isBlank() 
-                || resource.getResourceBody() == null 
+        if (resource == null
+                || resource.getResourceName() == null || StringUtils.isBlank(resource.getResourceName())
+                || resource.getResourceBody() == null
                 || resource.getResourceLength() <= 0) {
             throw new IOException("Invalid input resource!");
         }
@@ -261,16 +267,16 @@ public class ICAPClientImpl implements ICAPClient {
      * @throws IOException In case of an I/O error
      * @throws ContentBlockedException In case the content is blocked
      */
-    protected ICAPHeaderInformation processResource(final String requestIdentifier, 
-                                                    final ICAPSocket icapSocket, 
-                                                    final ICAPRequestInformation requestInformation, 
+    protected ICAPHeaderInformation processResource(final String requestIdentifier,
+                                                    final ICAPSocket icapSocket,
+                                                    final ICAPRequestInformation requestInformation,
                                                     final ICAPResource resource,
                                                     final File resourceResponse) throws IOException, ContentBlockedException {
 
         // first part of header
-        String resHeader = "GET /" + URLEncoder.encode(resource.getResourceName().trim(), StandardCharsets.UTF_8.name()) + " HTTP/1.1" + NEWLINE 
+        String resHeader = "GET /" + URLEncoder.encode(resource.getResourceName().trim(), StandardCharsets.UTF_8.name()) + " HTTP/1.1" + NEWLINE
                 + "Host: " + serviceInformation.getHostName() + ":" + serviceInformation.getServicePort() + NEWLINE + NEWLINE;
-        String resBody = resHeader + "HTTP/1.1 200 OK" + NEWLINE + ICAPConstants.HEADER_KEY_TRANSFER_ENCODING + ": chunked" + NEWLINE 
+        String resBody = resHeader + "HTTP/1.1 200 OK" + NEWLINE + ICAPConstants.HEADER_KEY_TRANSFER_ENCODING + ": chunked" + NEWLINE
                 + ICAPConstants.HEADER_KEY_CONTENT_LENGTH + ": " + resource.getResourceLength() + NEWLINE + NEWLINE;
 
         int previewSize = remoteServiceConfiguration.getServerPreviewSize();
@@ -278,24 +284,25 @@ public class ICAPClientImpl implements ICAPClient {
             previewSize = (int) resource.getResourceLength();
         }
 
-        String requestBuffer = "RESPMOD icap://" + serviceInformation.getHostName() + "/" + serviceInformation.getServiceName() + " ICAP/" + requestInformation.getApiVersion() + NEWLINE 
+        String requestBuffer = "RESPMOD icap://" + serviceInformation.getHostName() + "/" + serviceInformation.getServiceName() + " ICAP/" + requestInformation.getApiVersion() + NEWLINE
                         + "Host: " + serviceInformation.getHostName() + NEWLINE
-                        + "Connection:  close" + NEWLINE 
-                        + "User-Agent: " + requestInformation.getUserAgent() + NEWLINE 
+                        + "Connection:  close" + NEWLINE
+                        + "User-Agent: " + requestInformation.getUserAgent() + NEWLINE
                         + supportAllow204(requestIdentifier, requestInformation.isAllow204())
-                        + "Preview: " + previewSize + NEWLINE 
-                        + "Encapsulated: req-hdr=0, res-hdr=" + resHeader.length() + ", res-body=" + resBody.length() + NEWLINE + NEWLINE 
+                        + "Preview: " + previewSize + NEWLINE
+                        + "Encapsulated: req-hdr=0, res-hdr=" + resHeader.length() + ", res-body=" + resBody.length() + NEWLINE + NEWLINE
                         + resBody
                         + Integer.toHexString(previewSize) + NEWLINE;
         icapSocket.write(requestBuffer);
 
         // sending preview or, if smaller than previewSize, the whole file.
         byte[] chunk = new byte[previewSize];
-        
+
         MessageDigest inputMessageDigest = ICAPClientUtil.getInstance().createMessageDigest(messageDigestAlgorithm);
-        DigestInputStream inputstream = new DigestInputStream(resource.getResourceBody(), inputMessageDigest); 
-        inputstream.read(chunk);
-        icapSocket.write(chunk);
+        DigestInputStream inputstream = new DigestInputStream(resource.getResourceBody(), inputMessageDigest);
+        int readBytes = inputstream.read(chunk);
+        long totalReadBytes = readBytes;
+        icapSocket.write(chunk, 0, readBytes);
         icapSocket.write(NEWLINE);
         if (resource.getResourceLength() <= previewSize) {
             icapSocket.write("0; ieof" + ICAP_END_SEPARATOR);
@@ -320,31 +327,34 @@ public class ICAPClientImpl implements ICAPClient {
         // sending remaining part of file
         if (resource.getResourceLength() > previewSize) {
             byte[] buffer = new byte[bufferSize];
-            while ((inputstream.read(buffer)) != -1) {
-                icapSocket.write((Integer.toHexString(buffer.length) + NEWLINE));
-                icapSocket.write(buffer);
+            readBytes = -1;
+            while ((readBytes = inputstream.read(buffer)) != -1) {
+                totalReadBytes += readBytes;
+                LOG.debug(requestIdentifier + "Send next block of " + readBytes + " bytes (total sent: " + totalReadBytes + " bytes)...");
+                icapSocket.write((Integer.toHexString(readBytes) + NEWLINE));
+                icapSocket.write(buffer, 0, readBytes);
                 icapSocket.write(NEWLINE);
             }
-            
+
             // closing resource transfer.
             icapSocket.write(HTTP_END_SEPARATOR);
             icapSocket.flush();
         }
-        
+
         ICAPHeaderInformation icapHeaderInformation = icapSocket.readICAPResponse(requestIdentifier, ICAP_END_SEPARATOR, bufferSize);
         if (icapHeaderInformation.getStatus() == 204) { // unmodified
             return icapHeaderInformation;
-        } 
+        }
 
         if (icapHeaderInformation.getStatus() == 200) { // OK - The ICAP status is ok, but the encapsulated HTTP status will likely be different
             MessageDigest outputMessageDigest = ICAPClientUtil.getInstance().createMessageDigest(messageDigestAlgorithm);
             try (DigestOutputStream outputstream = new DigestOutputStream(new BufferedOutputStream(new FileOutputStream(resourceResponse)), outputMessageDigest)) {
                 icapSocket.processContent(outputstream);
             }
-            
+
             String inputMsg = ICAPClientUtil.getInstance().messageDigestToString(messageDigestAlgorithm, inputMessageDigest);
             icapHeaderInformation.getHeaders().put(ICAPConstants.HEADER_KEY_X_REQUEST_MESSAGE_DIGEST, Arrays.asList(inputMsg));
-            String outputMsg = ICAPClientUtil.getInstance().messageDigestToString(messageDigestAlgorithm, outputMessageDigest);            
+            String outputMsg = ICAPClientUtil.getInstance().messageDigestToString(messageDigestAlgorithm, outputMessageDigest);
             icapHeaderInformation.getHeaders().put(ICAPConstants.HEADER_KEY_X_RESPONSE_MESSAGE_DIGEST, Arrays.asList(outputMsg));
 
             boolean identicalContent = resource.getResourceLength() == resourceResponse.length() && inputMsg.equals(outputMsg);
@@ -355,23 +365,23 @@ public class ICAPClientImpl implements ICAPClient {
 
             return icapHeaderInformation;
         }
-        
+
         throw new IOException("Unrecognized or no status code in response header: " + icapHeaderInformation.getStatus() + "!");
     }
 
 
     /**
      * Check allow 204 support
-     * 
+     *
      * @param requestIdentifier the equest identifier
      * @param isAllow204 the request information
      * @return the request string
      */
     protected String supportAllow204(final String requestIdentifier, final Boolean isAllow204) {
-        
-        String serverReason = "suppported by the icap-server";    
+
+        String serverReason = "suppported by the icap-server";
         if (!remoteServiceConfiguration.isServerAllow204()) {
-            serverReason = "not " + serverReason;    
+            serverReason = "not " + serverReason;
         }
 
         String requestReason = "requested";
@@ -387,15 +397,15 @@ public class ICAPClientImpl implements ICAPClient {
             selectAllow204Reason = "Use allow 204";
             allow204Request = "Allow: 204" + NEWLINE;
         }
-        
+
         LOG.debug(requestIdentifier + selectAllow204Reason + ": " + requestReason + " (" + serverReason + ")");
         return allow204Request;
     }
 
-    
+
     /**
      * Create request identifier
-     * 
+     *
      * @param mode the mode
      * @param sourceRequest the source request
      * @return the request identifier
@@ -407,7 +417,7 @@ public class ICAPClientImpl implements ICAPClient {
 
     /**
      * Validate the request information
-     * 
+     *
      * @param requestInformation the request information
      * @throws IOException In case of an invalid request information
      */

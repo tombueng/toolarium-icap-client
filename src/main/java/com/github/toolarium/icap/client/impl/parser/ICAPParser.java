@@ -7,6 +7,8 @@ package com.github.toolarium.icap.client.impl.parser;
 
 import com.github.toolarium.icap.client.dto.ICAPConstants;
 import com.github.toolarium.icap.client.dto.ICAPHeaderInformation;
+import org.apache.commons.lang3.StringUtils;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -17,13 +19,13 @@ import java.util.regex.Pattern;
 
 /**
  * Defines the ICAP parser
- *  
+ *
  * @author patrick
  */
 public final class ICAPParser {
     private static final Pattern LINE_STATUS_PATTERN = Pattern.compile("(ICAP)\\/(1.0)\\s(\\d{3})\\s(.*)");
 
-    
+
     /**
      * Private class, the only instance of the singelton which will be created by accessing the holder class.
      *
@@ -33,7 +35,7 @@ public final class ICAPParser {
         static final ICAPParser INSTANCE = new ICAPParser();
     }
 
-    
+
     /**
      * Constructor
      */
@@ -41,7 +43,7 @@ public final class ICAPParser {
         // NOP
     }
 
-    
+
     /**
      * Get the instance
      *
@@ -50,8 +52,8 @@ public final class ICAPParser {
     public static ICAPParser getInstance() {
         return HOLDER.INSTANCE;
     }
-    
-    
+
+
     /**
      * Parse the protocol line
      *
@@ -60,9 +62,9 @@ public final class ICAPParser {
      */
     public ICAPHeaderInformation parseICAPHeaderInformation(String protocolHeaderLine) {
         ICAPHeaderInformation headerInformation = new ICAPHeaderInformation();
-        
+
         // parse ICAP protocol header line
-        if (protocolHeaderLine != null && !protocolHeaderLine.isBlank()) {
+        if (protocolHeaderLine != null && !StringUtils.isBlank(protocolHeaderLine)) {
             Matcher matcher = LINE_STATUS_PATTERN.matcher(protocolHeaderLine);
             if (matcher.matches()) {
                 headerInformation.setProtocol(matcher.group(1));
@@ -75,10 +77,10 @@ public final class ICAPParser {
         return headerInformation;
     }
 
-    
+
     /**
-     * Parse a raw header 
-     * 
+     * Parse a raw header
+     *
      * @param headerLines The raw header lines
      * @return the parsed header
      */
@@ -94,11 +96,11 @@ public final class ICAPParser {
         for (String line : headerLines) {
             int idx = line.indexOf(':');
             String value = line.substring(idx + 1).trim();
-            if (idx > 0) {                
+            if (idx > 0) {
                 key = line.substring(0, idx);
                 value = line.substring(idx + 1).trim();
             }
-            
+
             List<String> valueList = headers.get(key);
             if (valueList == null) {
                 valueList = new ArrayList<>();
@@ -115,7 +117,7 @@ public final class ICAPParser {
                 add(valueList, value.split("\\,"));
             }
         }
-        
+
         return headers;
     }
 

@@ -100,7 +100,7 @@ public final class ICAPClientUtil {
         }
     }
 
-    
+
     /**
      * Convert a long into a human readable string
      *
@@ -117,11 +117,11 @@ public final class ICAPClientUtil {
             bytes /= 1000;
             ci.next();
         }
-        
+
         return String.format("%.1f %cB", bytes / 1000.0, ci.current());
     }
-    
-    
+
+
     /**
      * Convert a long into a human readable string
      *
@@ -131,27 +131,27 @@ public final class ICAPClientUtil {
     public String bytesToString(long inputBytes) {
         long absB;
         if (inputBytes == Long.MIN_VALUE) {
-            absB = Long.MAX_VALUE;            
+            absB = Long.MAX_VALUE;
         } else {
             absB = Math.abs(inputBytes);
         }
-        
+
         if (absB < 1024) {
             return inputBytes + " B";
         }
-        
+
         long value = absB;
         CharacterIterator ci = new StringCharacterIterator("KMGTPE");
         for (int i = 40; i >= 0 && absB > 0xfffccccccccccccL >> i; i -= 10) {
             value >>= 10;
             ci.next();
         }
-        
+
         value *= Long.signum(inputBytes);
         return String.format("%.1f %ciB", value / 1024.0, ci.current());
     }
-    
-    
+
+
     /**
      * Copy
      *
@@ -164,7 +164,7 @@ public final class ICAPClientUtil {
         if (source == null || target == null) {
             return 0;
         }
-        
+
         long totalSize = 0;
         byte[] buf = new byte[8192];
         int length;
@@ -172,11 +172,11 @@ public final class ICAPClientUtil {
             target.write(buf, 0, length);
             totalSize += length;
         }
-        
+
         return totalSize;
     }
 
-    
+
     /**
      * Create a message digest
      *
@@ -192,7 +192,7 @@ public final class ICAPClientUtil {
         }
     }
 
-    
+
     /**
      * Create a hash
      *
@@ -203,8 +203,8 @@ public final class ICAPClientUtil {
     public String hashFile(File file) throws IOException {
         return hashFile("SHA-256", file);
     }
-  
-    
+
+
     /**
      * Create a hash
      *
@@ -216,13 +216,50 @@ public final class ICAPClientUtil {
     public String hashFile(String algorithm, File file) throws IOException {
         MessageDigest messageDigest = createMessageDigest(algorithm);
         try (BufferedInputStream in = new BufferedInputStream((new FileInputStream(file)));
-                DigestOutputStream out = new DigestOutputStream(OutputStream.nullOutputStream(), messageDigest)) {
-            in.transferTo(out);
+                DigestOutputStream out = new DigestOutputStream(nullOutputStream(), messageDigest)) {
+
+            final int MAX_SKIP_BUFFER_SIZE = 2048;
+
+            final int DEFAULT_BUFFER_SIZE = 8192;
+            long transferred = 0;
+            byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
+            int read;
+            while ((read = in.read(buffer, 0, DEFAULT_BUFFER_SIZE)) >= 0) {
+                out.write(buffer, 0, read);
+                transferred += read;
+            }
         }
 
         return messageDigestToString(algorithm, messageDigest);
     }
-    
+
+
+    public OutputStream nullOutputStream() {
+        return new OutputStream() {
+            private volatile boolean closed;
+
+            private void ensureOpen() throws IOException {
+                if (closed) {
+                    throw new IOException("Stream closed");
+                }
+            }
+
+            @Override
+            public void write(int b) throws IOException {
+                ensureOpen();
+            }
+
+            @Override
+            public void write(byte b[], int off, int len) throws IOException {
+                ensureOpen();
+            }
+
+            @Override
+            public void close() {
+                closed = true;
+            }
+        };
+    }
 
     /**
      * Convert a message digest into a string

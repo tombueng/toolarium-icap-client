@@ -5,6 +5,7 @@
  */
 package com.github.toolarium.icap.client.impl;
 
+import com.github.toolarium.icap.client.ICAPConnectionManager;
 import com.github.toolarium.icap.client.dto.ICAPConstants;
 import com.github.toolarium.icap.client.dto.ICAPHeaderInformation;
 import com.github.toolarium.icap.client.impl.parser.ICAPParser;
@@ -16,6 +17,8 @@ import java.net.Socket;
 import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Map;
+
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,7 +31,7 @@ import org.slf4j.LoggerFactory;
 public class ICAPSocket implements AutoCloseable {
     private static final Logger LOG = LoggerFactory.getLogger(ICAPSocket.class);
     private static final Charset StandardCharsetsUTF8 = Charset.forName("UTF-8");
-    
+
     private String requestIdentifier;
     private String connection;
     private Socket socket;
@@ -39,19 +42,21 @@ public class ICAPSocket implements AutoCloseable {
     /**
      * Constructor for ICAPSocket
      *
+     * @param connectionManager the connection manager
      * @param requestIdentifier the request identifier
      * @param host the host
      * @param port the port
      * @param service the service
+     * @param secureConnection true to establish a secured connection
      * @throws IOException In case of an I/O error
      */
-    public ICAPSocket(String requestIdentifier, String host, int port, String service) throws IOException {
+    public ICAPSocket(ICAPConnectionManager connectionManager, String requestIdentifier, String host, int port, String service, boolean secureConnection) throws IOException {
         this.requestIdentifier = requestIdentifier;
         this.connection = "" + host + ":" + port + "/" + service;
         LOG.debug(requestIdentifier + "Send create socket to [" + connection + "]");
 
         try {
-            socket = new Socket(host, port);
+            socket = connectionManager.createSocket(host, port, secureConnection);
             is = new ChunkedInputStream(requestIdentifier, socket.getInputStream());
             os = socket.getOutputStream();
         } catch (IOException e) {
@@ -60,7 +65,7 @@ public class ICAPSocket implements AutoCloseable {
         }
     }
 
-    
+
     /**
      * Write content
      *
@@ -71,11 +76,11 @@ public class ICAPSocket implements AutoCloseable {
         if (LOG.isDebugEnabled() && content.length() > 10) {
             LOG.debug(requestIdentifier + "Send request:\n" + content);
         }
-        
+
         write(content.getBytes(StandardCharsetsUTF8));
     }
 
-    
+
     /**
      * Write some bytes
      *
@@ -84,6 +89,19 @@ public class ICAPSocket implements AutoCloseable {
      */
     public void write(byte[] bytes) throws IOException {
         os.write(bytes);
+    }
+
+
+    /**
+     * Write some bytes
+     *
+     * @param bytes the bytes to write
+     * @param offset the offset
+     * @param length the length
+     * @throws IOException In case of an I/O error
+     */
+    public void write(byte[] bytes, int offset, int length) throws IOException {
+        os.write(bytes, offset, length);
     }
 
 
@@ -98,10 +116,10 @@ public class ICAPSocket implements AutoCloseable {
         LOG.debug(requestIdentifier + "Flushed request of [" + connection + "]");
     }
 
-    
+
     /**
      * Receive an expected ICAP header as response of a request.
-     * 
+     *
      * @param separator the separator
      * @param bufferSize the buffer size
      * @return the response header status
@@ -114,14 +132,14 @@ public class ICAPSocket implements AutoCloseable {
 
     /**
      * Write the server response.
-     * 
+     *
      * @param outputStream the output stream
      * @return the copied bytes
      * @throws IOException In case of an I/O error
      */
     public long processContent(OutputStream outputStream) throws IOException {
         long size = ICAPClientUtil.getInstance().copy(is, outputStream);
-        LOG.debug(requestIdentifier + "Process content [" + connection + "] copied bytes " + size);        
+        LOG.debug(requestIdentifier + "Process content [" + connection + "] copied bytes " + size);
         return size;
     }
 
@@ -136,13 +154,13 @@ public class ICAPSocket implements AutoCloseable {
      * @throws IOException In case of an I/O error
      */
     public ICAPHeaderInformation readICAPResponse(String requestIdentifier, final String separator, final int bufferSize) throws IOException {
-        
+
         // read http header
         ICAPHeaderInformation icapHeaderInformation = null;
         Map<String, List<String>> header = readHTTPHeader(separator, bufferSize);
-        if (header.containsKey(ICAPConstants.HEADER_KEY_X_ICAP_STATUSLINE) && !header.get(ICAPConstants.HEADER_KEY_X_ICAP_STATUSLINE).isEmpty()) {            
+        if (header.containsKey(ICAPConstants.HEADER_KEY_X_ICAP_STATUSLINE) && !header.get(ICAPConstants.HEADER_KEY_X_ICAP_STATUSLINE).isEmpty()) {
             String protocolHeaderLine = header.get(ICAPConstants.HEADER_KEY_X_ICAP_STATUSLINE).get(0); // parse protocol line
-            if (protocolHeaderLine != null && !protocolHeaderLine.isBlank()) {
+            if (protocolHeaderLine != null && StringUtils.isNotBlank(protocolHeaderLine)) {
                 icapHeaderInformation = ICAPParser.getInstance().parseICAPHeaderInformation(protocolHeaderLine);
                 LOG.debug(requestIdentifier + "Received ICAP response status: " + protocolHeaderLine);
             }
@@ -157,7 +175,7 @@ public class ICAPSocket implements AutoCloseable {
         return icapHeaderInformation;
     }
 
-    
+
     /**
      * @see java.lang.AutoCloseable#close()
      */
@@ -169,7 +187,7 @@ public class ICAPSocket implements AutoCloseable {
         close(os);
         socket.close();
     }
-    
+
 
     /**
      * Close

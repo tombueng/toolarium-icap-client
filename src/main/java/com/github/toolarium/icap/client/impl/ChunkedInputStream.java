@@ -16,13 +16,15 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
 /**
  * Implements a chunk input stram
- *  
+ *
  * @author patrick
  */
 public class ChunkedInputStream extends BufferedInputStream {
@@ -40,7 +42,7 @@ public class ChunkedInputStream extends BufferedInputStream {
     private long chunkSize;
     private long maxChunkSize;
 
-    
+
     /**
      * Constructor for ChunkedInputStream
      *
@@ -53,7 +55,7 @@ public class ChunkedInputStream extends BufferedInputStream {
         if (is == null) {
             throw new IOException("Invalid stream!");
         }
-        
+
         this.requestIdentifier = requestIdentifier;
         currentChunkPos = 0;
         currentChunkSize = 0;
@@ -61,7 +63,7 @@ public class ChunkedInputStream extends BufferedInputStream {
         maxChunkSize = -1;
         ended = false;
     }
-    
+
 
     /**
      * @see java.io.InputStream#read()
@@ -71,7 +73,7 @@ public class ChunkedInputStream extends BufferedInputStream {
         if (ended) {
             return -1;
         }
-  
+
         if (currentChunkPos >= currentChunkSize) {
             nextChunk();
         }
@@ -84,7 +86,7 @@ public class ChunkedInputStream extends BufferedInputStream {
         }
     }
 
-    
+
     /**
      * @see java.io.InputStream#read(byte[])
      */
@@ -92,7 +94,7 @@ public class ChunkedInputStream extends BufferedInputStream {
     public int read(byte[] b) throws IOException {
         return read(b, 0, b.length);
     }
-    
+
 
     /**
      * @see java.io.InputStream#read(byte[], int, int)
@@ -112,21 +114,21 @@ public class ChunkedInputStream extends BufferedInputStream {
             sizeToRead = Long.valueOf(maxChunkSize - chunkSize).intValue();
             ended = true;
         } else {
-            
-            if (headers != null 
+
+            if (headers != null
                     && headers.containsKey(ICAPConstants.HEADER_KEY_TRANSFER_ENCODING)
                     && !headers.get(ICAPConstants.HEADER_KEY_TRANSFER_ENCODING).isEmpty()
                     && headers.get(ICAPConstants.HEADER_KEY_TRANSFER_ENCODING).get(0).equalsIgnoreCase("chunked")
                     && headers.containsKey(ICAPConstants.HEADER_KEY_CONTENT_LENGTH)
                     && !headers.get(ICAPConstants.HEADER_KEY_CONTENT_LENGTH).isEmpty()
-                    && !headers.get(ICAPConstants.HEADER_KEY_CONTENT_LENGTH).get(0).isBlank()) {
+                    && !StringUtils.isBlank(headers.get(ICAPConstants.HEADER_KEY_CONTENT_LENGTH).get(0))) {
                 // NOP
-            } else {                
+            } else {
                 ByteArrayOutputStream buffer = new ByteArrayOutputStream();
                 readLine(buffer);
                 sizeToRead = len;
-                String size = buffer.toString(StandardCharsetsUTF8);
-                if (!size.isBlank()) {
+                String size = buffer.toString(StandardCharsetsUTF8.name());
+                if (!StringUtils.isBlank(size)) {
                     try {
                         sizeToRead = Integer.parseInt(size, 16);
                     } catch (NumberFormatException e) {
@@ -135,15 +137,15 @@ public class ChunkedInputStream extends BufferedInputStream {
                 }
             }
         }
-        
+
         int readBytes = 0;
         try {
             readBytes = super.read(b, off, sizeToRead);
-            
+
             if (maxChunkSize <= 0) {
                 super.read(new byte[3], 0, 3); // read 0\r\n
             }
-            
+
             return readBytes;
         } finally {
             currentChunkPos += readBytes;
@@ -151,7 +153,7 @@ public class ChunkedInputStream extends BufferedInputStream {
         }
     }
 
-    
+
     /**
      * @see java.io.InputStream#close()
      */
@@ -159,8 +161,8 @@ public class ChunkedInputStream extends BufferedInputStream {
     public void close() throws IOException {
         super.close();
     }
-    
-    
+
+
     /**
      * Get the headers
      *
@@ -169,11 +171,11 @@ public class ChunkedInputStream extends BufferedInputStream {
     public Map<String, List<String>> getHeaders() {
         return headers;
     }
-    
-    
+
+
     /**
      * Read the header
-     * 
+     *
      * @return the header
      * @throws IOException If an IO error occurs.
      */
@@ -188,12 +190,12 @@ public class ChunkedInputStream extends BufferedInputStream {
                 orgHeader += line + NEWLINE;
             }
         } while (line != null && line.length() > 0);
-            
+
         if (line == null) {
             ended = true;
         }
 
-        headers = ICAPParser.getInstance().parseHeader(headerLines);       
+        headers = ICAPParser.getInstance().parseHeader(headerLines);
         if (headers.containsKey(ICAPConstants.HEADER_KEY_CONTENT_LENGTH) && !headers.get(ICAPConstants.HEADER_KEY_CONTENT_LENGTH).isEmpty()) {
             try {
                 maxChunkSize = Long.valueOf(headers.get(ICAPConstants.HEADER_KEY_CONTENT_LENGTH).get(0));
@@ -201,15 +203,15 @@ public class ChunkedInputStream extends BufferedInputStream {
                 // NOP
             }
         }
-        
-        LOG.debug(requestIdentifier + "HTTP headers:\n" + orgHeader);        
+
+        LOG.debug(requestIdentifier + "HTTP headers:\n" + orgHeader);
         return headers;
     }
 
-    
+
     /**
      * Read the next chunk.
-     * 
+     *
      * @return the chunk size
      * @throws IOException If an IO error occurs.
      */
@@ -228,7 +230,7 @@ public class ChunkedInputStream extends BufferedInputStream {
         if (b != LF && b != CR) {
             buffer.write(b);
         }
-        
+
         // read first line
         String line = readLine(buffer);
         if (line == null || line.length() <= 0) {
@@ -243,7 +245,7 @@ public class ChunkedInputStream extends BufferedInputStream {
                 currentChunkSize = 1; // ignore not a chunked content
                 return currentChunkSize;
             }
-            
+
             line = readLine(new ByteArrayOutputStream());
             if (line != null && line.length() == 0) {
                 line = readLine(new ByteArrayOutputStream());
@@ -253,7 +255,7 @@ public class ChunkedInputStream extends BufferedInputStream {
         if (line.endsWith(";")) {
             line = line.substring(0, line.length() - 1);
         }
-        
+
         try {
             currentChunkSize = Integer.parseInt(line.trim(), 16);
             return currentChunkSize;
@@ -261,8 +263,8 @@ public class ChunkedInputStream extends BufferedInputStream {
             throw new IOException("Bad chunk header [" + line + "]:" + e.getMessage());
         }
     }
-    
-    
+
+
     /**
      * Read next newline
      *
@@ -277,22 +279,22 @@ public class ChunkedInputStream extends BufferedInputStream {
 
         if (b == LF) {
             return b;
-        } 
+        }
 
         if (b == CR) {
             b = super.read();
-            
+
             if (b != LF) {
                 return b;
             } else {
                 return b;
             }
         }
-        
+
         return b;
     }
-    
-    
+
+
     /**
      * Read the next line
      *
@@ -314,11 +316,11 @@ public class ChunkedInputStream extends BufferedInputStream {
         } else {
             return null;
         }
-        
+
         if (buffer.size() == 0) {
             return "";
         }
-        
+
         return new String(buffer.toByteArray(), 0, buffer.size(), StandardCharsetsUTF8);
     }
 }

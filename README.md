@@ -1,5 +1,5 @@
 [![License](https://img.shields.io/github/license/toolarium/toolarium-icap-client)](https://github.com/toolarium/toolarium-icap-client/blob/master/LICENSE)
-[![Maven Central](https://img.shields.io/maven-central/v/com.github.toolarium/toolarium-icap-client/1.0.1)](https://search.maven.org/artifact/com.github.toolarium/toolarium-icap-client/1.0.1/jar)
+[![Maven Central](https://img.shields.io/maven-central/v/com.github.toolarium/toolarium-icap-client/1.1.0)](https://search.maven.org/artifact/com.github.toolarium/toolarium-icap-client/1.1.0/jar)
 [![javadoc](https://javadoc.io/badge2/com.github.toolarium/toolarium-icap-client/javadoc.svg)](https://javadoc.io/doc/com.github.toolarium/toolarium-icap-client)
 
 # toolarium-icap-client
@@ -13,8 +13,26 @@ Implements the an ICAP client in java compliant with [RFC 3507](https://www.ietf
 
 ## Versioning
 
-We use [SemVer](http://semver.org/) for versioning. For the versions available, see the [tags on this repository]. 
+We use [SemVer](http://semver.org/) for versioning. For the versions available, see the [tags on this repository](https://github.com/toolarium/toolarium-icap-client/tags). 
 
+
+### Gradle:
+
+```groovy
+dependencies {
+    implementation "com.github.toolarium:toolarium-icap-client:1.1.0"
+}
+```
+
+### Maven:
+
+```xml
+<dependency>
+    <groupId>com.github.toolarium</groupId>
+    <artifactId>toolarium-icap-client</artifactId>
+    <version>1.1.0</version>
+</dependency>
+```
 
 ## Usage
 
@@ -72,6 +90,18 @@ DA054425 - Thread found in resource (username: user, source: file, resource: tes
 - X-Response-Message-Digest: [{SHA-256}2e124ff42640aafcc7e267269dd495f35411ce469ec2a64c9af56ccd74bed32f]
 - X-Resource-Identical-Content: [false]
 ```
+
+## Secure connection
+To support secured connection you can either pass by the getICAPClient a icaps:// url or enable the secure connection by
+
+```java
+ICAPClientFactory.getInstance().getICAPClient(hostName, port, serviceName, true).validateResource(....);
+```
+
+For additional requirements regarding the connection the ICAPConnectionManager can bet set in the ICAPClientFcatory. 
+The simplest way is to extend the default implementation ``com.github.toolarium.icap.client.impl.ICAPConnectionManagerImpl`` and overwrite the 
+``createSecureSocket`` or the ``createUnsecureSocket`` method. 
+
 
 
 ## Test 
